@@ -1,0 +1,24 @@
+name = "k4iyo-private-statements"
+main = "worker.js"
+compatibility_date = "2025-10-31"
+workers_dev = false
+preview_urls = false
+
+# Route only these paths; the rest of the live site is untouched.
+routes = [
+  { pattern = "k4iyo.com/s1*", zone_name = "k4iyo.com" },
+  { pattern = "k4iyo.com/s2*", zone_name = "k4iyo.com" },
+  { pattern = "k4iyo.com/s3*", zone_name = "k4iyo.com" },
+  { pattern = "k4iyo.com/s4*", zone_name = "k4iyo.com" },
+  { pattern = "k4iyo.com/s5*", zone_name = "k4iyo.com" }
+]
+
+[[kv_namespaces]]
+binding = "STATEMENTS"
+id = "SET_KV_NAMESPACE_ID_BEFORE_DEPLOY"
+
+[vars]
+ACCESS_TEAM_DOMAIN = "SET_CLOUDFLARE_ACCESS_TEAM_DOMAIN"
+ACCESS_AUD = "SET_ACCESS_APPLICATION_AUD_TAG"
+
+# Set STATEMENT_KEY_B64 as a Worker secret. Never place it in this file or GitHub.
