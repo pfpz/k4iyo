@@ -13,6 +13,7 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 ## Security design in the draft Worker
 
 - The access code is processed in the visitor’s browser with PBKDF2-HMAC-SHA-256 (600,000 iterations) and a random 16-byte salt. The browser sends a fresh HMAC proof bound to the signed, short-lived form token; the passphrase itself is not sent. Only the salt and derived verifier are Worker secrets.
+- The five pages use a restrained monochrome layout with no homepage branding or decorative gradients. Each page includes previous/next statement links where available; page 1 has no previous link and page 5 has no next link.
 - A Cloudflare Durable Object counts failures atomically by an HMAC-pseudonym of the visitor IP. The fifth incorrect attempt redirects to the homepage and locks that client IP for 24 hours. People behind the same public IP may share a lockout.
 - Successful entry issues a signed Secure, HttpOnly, SameSite=Strict cookie shared by all five pages. It is persistent until cleared or revoked by rotating the signing key. Browsers can limit or clear persistent cookies, so no site can guarantee truly indefinite persistence.
 - Each successful entry creates a private KV log record with a UTC timestamp and random event ID. No IP address or code is logged.
