@@ -23,7 +23,7 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 
 1. Keep the `GateLimiter` Durable Object migration and `STATEMENTS` and `LOGIN_LOG` KV bindings in sync with `wrangler.toml`.
 2. On your own computer, run `scripts/create-passcode-verifier.mjs` in an interactive terminal and enter the access code there; the script hides typing and prints only a random salt plus the PBKDF2 verifier. Enter those outputs yourself as Worker secrets `GATE_SALT_B64` and `GATE_HASH_B64`. Do not send the code or outputs in chat.
-3. Generate random values for `SESSION_SIGNING_KEY_B64` (32 bytes) and `CONTENT_KEY_B64` (64 bytes), then save each as a Worker secret. Never put them in public source.
+3. Run `node scripts/create-random-worker-secrets.mjs` locally to generate random values for `SESSION_SIGNING_KEY_B64` (32 bytes) and `CONTENT_KEY_B64` (64 bytes). Add them as Worker secrets yourself; do not commit or share the output. Keep the content key available locally only while sealing the statements.
 4. Verify that the Worker fails closed before attaching custom-domain routes for only `k4iyo.com/s1*` through `k4iyo.com/s5*`. Keep workers.dev and preview URLs disabled.
 5. Prepare and review the final five statements in a private JSON file outside GitHub. Seal them locally and upload only the ciphertext to the private `STATEMENTS` KV namespace.
 6. Verify unauthenticated, correct-code, wrong-code, lockout, cookie, cache-header, and content-decryption behavior before sharing any hash clues. Keep routes unattached until secrets and encrypted statement records are in place.
