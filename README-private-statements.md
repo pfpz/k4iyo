@@ -12,7 +12,7 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 
 ## Security design in the draft Worker
 
-- The shared access code is checked with PBKDF2-HMAC-SHA-256 (600,000 iterations) and a random 16-byte salt. Only the salt and derived verifier are Worker secrets. The plaintext code is never saved in the repository or statement database.
+- The access code is processed in the visitor’s browser with PBKDF2-HMAC-SHA-256 (600,000 iterations) and a random 16-byte salt. The browser sends a fresh HMAC proof bound to the signed, short-lived form token; the passphrase itself is not sent. Only the salt and derived verifier are Worker secrets.
 - A Cloudflare Durable Object counts failures atomically by an HMAC-pseudonym of the visitor IP. The fifth incorrect attempt redirects to the homepage and locks that client IP for 24 hours. People behind the same public IP may share a lockout.
 - Successful entry issues a signed Secure, HttpOnly, SameSite=Strict cookie shared by all five pages. It is persistent until cleared or revoked by rotating the signing key. Browsers can limit or clear persistent cookies, so no site can guarantee truly indefinite persistence.
 - Each successful entry creates a private KV log record with a UTC timestamp and random event ID. No IP address or code is logged.
@@ -23,8 +23,9 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 
 - The prior “Secure access is not available” failure was traced to the Worker having no custom-domain routes. Cloudflare showed zero routes, so the gate requests were not reaching the Worker that owns the verifier, limiter, and encrypted-record bindings.
 - Attached `k4iyo.com/s1*` through `k4iyo.com/s5*`; Cloudflare now reports five routes on this Worker. The homepage and unrelated routes were not changed.
-- All five public GET routes return the gate form with a signed form token. A blank-code POST returns the form without incrementing the failed-attempt counter. Local integration checks with disposable test keys verified the successful verifier, limiter, audit-log, and cookie path.
-- A real-code unlock and live statement decryption still require the site owner to enter and submit the access code in the browser. No code was read or entered by the maintainer.
+- The earlier form-submit error was caused by two issues: the Worker had no custom routes, and its server-side PBKDF2 call exceeded Cloudflare Workers’ 100,000-iteration limit. The latter produced `NotSupportedError` during verifier checking.
+- All five public GET routes now return the browser-verification gate. Local integration checks with disposable test keys verify successful and invalid proofs, the limiter, audit-log, and session-cookie paths. A live invalid-code submission now returns the intended mismatch message instead of a 503.
+- A successful real-code unlock and live statement decryption remain to be confirmed. The owner should only try again after checking the exact code configured in the verifier; the gate now reports remaining attempts to prevent accidental lockout. The maintainer did not read or enter the code.
 - Keep workers.dev and preview URLs disabled.
 
 Statement plaintext, access code, verifier, and encryption keys are not stored in GitHub. The homepage remains public.
