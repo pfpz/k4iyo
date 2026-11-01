@@ -186,7 +186,8 @@ export class GateLimiter {
       record.count += 1;
       if (record.count >= 5) record.blockedUntil = now + DAY_MS;
       await this.storage.put("attempts", record);
-      await this.storage.setAlarm(record.blockedUntil || record.windowStart + DAY_MS);
+      try { await this.storage.setAlarm(record.blockedUntil || record.windowStart + DAY_MS); }
+      catch { /* Expiry is enforced from timestamps on the next request if alarm scheduling fails. */ }
       return Response.json({ blocked: record.blockedUntil > now, attemptsLeft: Math.max(0, 5 - record.count) });
     }
     if (action === "success") {
