@@ -177,12 +177,16 @@ export default {
     catch { return textResponse(503, "Secure access is not available."); }
     if (state.blocked) return redirect("/");
     if (request.method === "POST") {
-      const length = Number(request.headers.get("Content-Length") || "0");
-      if (length > 2048) return textResponse(413, "Request too large.");
-      let form;
-      try { form = await request.formData(); }
-      catch { return accessGateHtml(id, "Enter the access code and try again."); }
-      const candidate = String(form.get("code") || "");
+      if (request.headers.get("Origin") !== url.origin) return textResponse(403, "This request could not be verified.");
+      const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+      if (contentType !== "application/x-www-form-urlencoded") return textResponse(415, "Unsupported form encoding.");
+      let body;
+      try { body = await request.arrayBuffer(); }
+      catch { return textResponse(400, "Enter the access code and try again."); }
+      if (body.byteLength > 2048) return textResponse(413, "Request too large.");
+      let candidate;
+      try { candidate = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body)).get("code") || ""; }
+      catch { return textResponse(400, "Enter the access code and try again."); }
       if (!candidate || candidate.length > 256) return accessGateHtml(id, "Enter the access code and try again.");
       try {
         if (!(await verifyPasscode(candidate, env))) {
