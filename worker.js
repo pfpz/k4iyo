@@ -32,6 +32,15 @@ function headers(extra = {}) {
 function textResponse(status, message, extra = {}) {
   return new Response(message, { status, headers: headers({ "Content-Type": "text/plain; charset=utf-8", ...extra }) });
 }
+function isSameOriginForm(request, url) {
+  const origin = request.headers.get("Origin");
+  if (origin !== null) return origin === url.origin;
+  if (request.headers.get("Sec-Fetch-Site") === "same-origin") return true;
+  const referrer = request.headers.get("Referer");
+  if (!referrer) return false;
+  try { return new URL(referrer).origin === url.origin; }
+  catch { return false; }
+}
 function redirect(location, extraHeaders = {}) {
   return new Response(null, { status: 303, headers: headers({ Location: location, ...extraHeaders }) });
 }
@@ -177,7 +186,7 @@ export default {
     catch { return textResponse(503, "Secure access is not available."); }
     if (state.blocked) return redirect("/");
     if (request.method === "POST") {
-      if (request.headers.get("Origin") !== url.origin) return textResponse(403, "This request could not be verified.");
+      if (!isSameOriginForm(request, url)) return textResponse(403, "This request could not be verified.");
       const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
       if (contentType !== "application/x-www-form-urlencoded") return textResponse(415, "Unsupported form encoding.");
       let body;
