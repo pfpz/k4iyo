@@ -223,16 +223,24 @@ export default {
       if (!(await verifyFormToken(form.get("csrf"), id, env))) return textResponse(403, "This form expired. Reload the page and try again.");
       const candidate = form.get("code") || "";
       if (!candidate || candidate.length > 256) return await accessGateHtml(id, env, "Enter the access code and try again.");
+      let phase = "passcode-verification";
       try {
         if (!(await verifyPasscode(candidate, env))) {
+          phase = "failure-counter";
           const result = await limiter(request, env, "fail");
           if (result.blocked) return redirect("/");
           return await accessGateHtml(id, env, "That code did not match. " + result.attemptsLeft + " attempts remain before a 24-hour lockout.");
         }
+        phase = "success-counter";
         await limiter(request, env, "success");
+        phase = "success-log";
         await logSuccess(env);
+        phase = "session-cookie";
         return redirect("/" + id + "/", { "Set-Cookie": cookieHeader(await issueSession(env)) });
-      } catch { return textResponse(503, "Secure access is not available."); }
+      } catch (error) {
+        console.error("gate-access-failure", phase, error?.name || "Error");
+        return textResponse(503, "Secure access is not available.");
+      }
     }
     if (request.method !== "GET" && request.method !== "HEAD") return textResponse(405, "Method not allowed.", { "Allow": "GET, HEAD, POST" });
     try {
