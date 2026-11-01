@@ -81,17 +81,13 @@ async function limiter(request, env, action) {
   if (!response.ok) throw new Error("rate limiter unavailable");
   return response.json();
 }
-async function verifyPasscode(candidate, env) {
-  const salt = bytesFromB64(String(env.GATE_SALT_B64 || ""));
+async function verifyProof(proof, csrf, id, env) {
   const expected = bytesFromB64(String(env.GATE_HASH_B64 || ""));
-  if (salt.length < 16 || expected.length !== 32) throw new Error("passcode verifier unavailable");
-  const material = await crypto.subtle.importKey("raw", encoder.encode(candidate), "PBKDF2", false, ["deriveBits"]);
-  const actual = new Uint8Array(await crypto.subtle.deriveBits({
-    name: "PBKDF2", salt, iterations: PASSCODE_ITERATIONS, hash: "SHA-256"
-  }, material, 256));
-  let difference = 0;
-  for (let i = 0; i < actual.length; i++) difference |= actual[i] ^ expected[i];
-  return difference === 0;
+  if (expected.length !== 32 || !/^[A-Za-z0-9_-]{43}$/.test(String(proof || ""))) return false;
+  const key = await hmacKey(expected, ["verify"]);
+  return crypto.subtle.verify(
+    "HMAC", key, bytesFromB64url(proof), encoder.encode("gate-proof:" + id + ":" + csrf)
+  );
 }
 function passcodeConfigIsValid(env) {
   try {
@@ -140,14 +136,15 @@ async function accessGateHtml(id, env, errorText = "") {
   const nonce = b64url(randomBytes(16));
   const n = id.slice(1);
   const css = ':root{--ink:#302934;--muted:#756b78;--pink:#c982a5;--line:#eadde6;--paper:#fffdfd}*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 8% 5%,rgba(248,220,235,.58),transparent 34rem),radial-gradient(ellipse at 94% 88%,rgba(220,237,248,.48),transparent 36rem),var(--paper)}main{width:min(100% - 32px,650px);margin:auto;padding:clamp(34px,8vw,72px) 0}.mast{text-align:center;color:#a36f96;font-size:.7rem;letter-spacing:.22em;text-transform:uppercase}.card{margin-top:26px;padding:clamp(24px,6vw,48px);border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 8px 28px rgba(70,48,65,.045)}.eyebrow{color:#965c7d;font-size:.72rem;font-weight:650;letter-spacing:.17em;text-transform:uppercase}h1{margin:12px 0;font:600 clamp(1.9rem,6vw,2.7rem)/1.15 "Iowan Old Style","Palatino Linotype",Georgia,serif}p{color:#655867}.field{display:flex;gap:10px;margin-top:22px}.field input{min-width:0;flex:1;padding:13px 15px;border:1px solid #eadde6;border-radius:12px;font:inherit}.field button,.submit{border:1px solid #d9bfd0;border-radius:12px;background:#fff8fc;color:#6e4d64;padding:12px 15px;font:600 .9rem -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}.submit{width:100%;margin-top:13px;background:#f9eaf2}.error{color:#8d405d;font-size:.9rem}.subtle{color:var(--muted);font-size:.82rem}.footer{margin-top:19px;text-align:center;color:var(--muted);font-size:.75rem}a{color:#965c7d}';
-  const script = "const f=document.getElementById('code');const b=document.getElementById('toggle');b.addEventListener('click',()=>{const show=f.type==='password';f.type=show?'text':'password';b.textContent=show?'Hide':'Show';b.setAttribute('aria-pressed',String(show));f.focus();});";
+  const script = `const f=document.getElementById('code'),b=document.getElementById('toggle'),form=document.getElementById('gate-form'),submit=form.querySelector('.submit'),status=document.getElementById('verify-status');submit.disabled=false;
+function decodeB64(v){const raw=atob(v);return Uint8Array.from(raw,c=>c.charCodeAt(0));}
+function encodeB64url(bytes){let raw='';for(const x of bytes)raw+=String.fromCharCode(x);return btoa(raw).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/g,'');}
+b.addEventListener('click',()=>{const show=f.type==='password';f.type=show?'text':'password';b.textContent=show?'Hide':'Show';b.setAttribute('aria-pressed',String(show));f.focus();});
+form.addEventListener('submit',async event=>{if(form.dataset.verified==='true')return;event.preventDefault();if(!f.value||f.value.length>256){f.reportValidity();return;}submit.disabled=true;status.textContent='Checking securely…';try{const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(f.value),'PBKDF2',false,['deriveBits']);const verifier=await crypto.subtle.deriveBits({name:'PBKDF2',salt:decodeB64(form.dataset.salt),iterations:${PASSCODE_ITERATIONS},hash:'SHA-256'},material,256);const key=await crypto.subtle.importKey('raw',verifier,{name:'HMAC',hash:'SHA-256'},false,['sign']);const csrf=form.elements.namedItem('csrf').value;const proof=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('gate-proof:'+form.dataset.statement+':'+csrf));form.elements.namedItem('proof').value=encodeB64url(new Uint8Array(proof));f.value='';form.dataset.verified='true';form.submit();}catch{submit.disabled=false;status.textContent='Secure code verification failed. Reload and try again.';}});`;
   const csp = "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-  const body = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive,nosnippet"><meta name="theme-color" content="#fffdfd"><title>Private Statement ' + n + ' — KILLKAIYO</title><style>' + css + '</style></head><body><main><div class="mast">KILLKAIYO · PRIVATE STATEMENT</div><section class="card"><div class="eyebrow">Statement ' + n + ' · Restricted</div><h1>Enter the access code</h1><p>These statement pages are shared by invitation. Enter the access code to continue.</p>' + (errorText ? '<p class="error" role="alert">' + escapeHtml(errorText) + '</p>' : '') + '<form method="post" action="/s' + n + '/"><label for="code">Access code</label><div class="field"><input id="code" name="code" type="password" autocomplete="current-password" required maxlength="256" aria-describedby="privacy"><button id="toggle" type="button" aria-pressed="false">Show</button></div><button class="submit" type="submit">Unlock all five statements</button></form><p id="privacy" class="subtle">Your code is checked securely and is not stored in plain text.</p></section><p class="footer"><a href="/">Return to k4iyo.com</a> · This page is not indexed by search engines.</p></main><script nonce="' + nonce + '">' + script + '</script></body></html>';
-  const securedBody = body.replace(
-    '<form method="post" action="/s' + n + '/">',
-    '<form method="post" action="/s' + n + '/"><input type="hidden" name="csrf" value="' + formToken + '">'
-  );
-  return new Response(securedBody, { status: 200, headers: headers({
+  const saltB64 = escapeHtml(String(env.GATE_SALT_B64 || ""));
+  const body = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive,nosnippet"><meta name="theme-color" content="#fffdfd"><title>Private Statement ' + n + ' — KILLKAIYO</title><style>' + css + '</style></head><body><main><div class="mast">KILLKAIYO · PRIVATE STATEMENT</div><section class="card"><div class="eyebrow">Statement ' + n + ' · Restricted</div><h1>Enter the access code</h1><p>These statement pages are shared by invitation. Enter the access code to continue.</p>' + (errorText ? '<p class="error" role="alert">' + escapeHtml(errorText) + '</p>' : '') + '<noscript><p class="error">Enable JavaScript to securely verify the access code.</p></noscript><form id="gate-form" data-statement="' + id + '" data-salt="' + saltB64 + '" method="post" action="/s' + n + '/"><input type="hidden" name="csrf" value="' + formToken + '"><input type="hidden" name="proof" value=""><label for="code">Access code</label><div class="field"><input id="code" type="password" autocomplete="off" required maxlength="256" aria-describedby="privacy"><button id="toggle" type="button" aria-pressed="false">Show</button></div><button class="submit" type="submit" disabled>Unlock all five statements</button><p id="verify-status" class="subtle" aria-live="polite"></p></form><p id="privacy" class="subtle">Your code is checked securely and is not stored or transmitted in plain text.</p></section><p class="footer"><a href="/">Return to k4iyo.com</a> · This page is not indexed by search engines.</p></main><script nonce="' + nonce + '">' + script + '</script></body></html>';
+  return new Response(body, { status: 200, headers: headers({
     "Content-Type": "text/html; charset=utf-8",
     "Content-Security-Policy": csp
   }) });
@@ -224,11 +221,11 @@ export default {
       try { form = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body)); }
       catch { return textResponse(400, "Enter the access code and try again."); }
       if (!(await verifyFormToken(form.get("csrf"), id, env))) return textResponse(403, "This form expired. Reload the page and try again.");
-      const candidate = form.get("code") || "";
-      if (!candidate || candidate.length > 256) return await accessGateHtml(id, env, "Enter the access code and try again.");
-      let phase = "passcode-verification";
+      const csrf = form.get("csrf") || "";
+      const proof = form.get("proof") || "";
+      let phase = "proof-verification";
       try {
-        if (!(await verifyPasscode(candidate, env))) {
+        if (!(await verifyProof(proof, csrf, id, env))) {
           phase = "failure-counter";
           const result = await limiter(request, env, "fail");
           if (result.blocked) return redirect("/");
