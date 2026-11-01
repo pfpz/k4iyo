@@ -7,7 +7,7 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 - Private KV namespace `k4iyo-private-statements` is created and intended for encrypted statement records.
 - Private KV namespace `k4iyo-private-login-log` is created and intended for successful-entry timestamps.
 - Worker `k4iyo-private-statements` exists, but its public workers.dev URL is disabled.
-- The Worker has no KV bindings, Durable Object binding, secrets, or custom-domain routes configured. It is still the starter Worker and is not serving these pages.
+- Production bindings STATEMENTS and LOGIN_LOG now point to the two private KV namespaces. The Durable Object binding, secrets, and custom-domain routes are not configured. The Worker is still the starter Worker and is not serving these pages.
 - Existing Workers, the homepage, and the main GitHub branch have not been changed.
 
 ## Security design in the draft Worker
@@ -21,7 +21,7 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 
 ## Setup still required before the statement routes can be enabled
 
-1. Bind the existing KV namespaces as `STATEMENTS` and `LOGIN_LOG`, and configure the Durable Object binding and migration from `wrangler.toml`.
+1. Deploy the Worker code from this branch to create the GateLimiter Durable Object class, then add its binding as `GATE_LIMITER`. Production KV bindings STATEMENTS and LOGIN_LOG already point to the private namespaces; keep the Durable Object migration in sync with `wrangler.toml`.
 2. On your own computer, run `scripts/create-passcode-verifier.mjs` in an interactive terminal and enter the access code there; the script hides typing and prints only a random salt plus the PBKDF2 verifier. Enter those outputs yourself as Worker secrets `GATE_SALT_B64` and `GATE_HASH_B64`. Do not send the code or outputs in chat.
 3. Generate random values for `SESSION_SIGNING_KEY_B64` (32 bytes) and `CONTENT_KEY_B64` (64 bytes), then save each as a Worker secret. Never put them in public source.
 4. Install the Worker code from this branch and verify that it fails closed before attaching custom-domain routes for only `k4iyo.com/s1*` through `k4iyo.com/s5*`. Keep workers.dev and preview URLs disabled.
