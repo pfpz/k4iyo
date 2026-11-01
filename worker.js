@@ -8,6 +8,10 @@ function bytesFromB64(value) {
   const raw = atob(value);
   return Uint8Array.from(raw, c => c.charCodeAt(0));
 }
+function bytesFromB64url(value) {
+  const standard = value.replace(/-/g, "+").replace(/_/g, "/");
+  return bytesFromB64(standard + "=".repeat((4 - standard.length % 4) % 4));
+}
 function b64url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -32,15 +36,6 @@ function headers(extra = {}) {
 function textResponse(status, message, extra = {}) {
   return new Response(message, { status, headers: headers({ "Content-Type": "text/plain; charset=utf-8", ...extra }) });
 }
-function isSameOriginForm(request, url) {
-  const origin = request.headers.get("Origin");
-  if (origin !== null) return origin === url.origin;
-  if (request.headers.get("Sec-Fetch-Site") === "same-origin") return true;
-  const referrer = request.headers.get("Referer");
-  if (!referrer) return false;
-  try { return new URL(referrer).origin === url.origin; }
-  catch { return false; }
-}
 function redirect(location, extraHeaders = {}) {
   return new Response(null, { status: 303, headers: headers({ Location: location, ...extraHeaders }) });
 }
@@ -54,6 +49,24 @@ async function sessionKey(env) {
   const raw = bytesFromB64(String(env.SESSION_SIGNING_KEY_B64 || ""));
   if (raw.length !== 32) throw new Error("session secret unavailable");
   return hmacKey(raw);
+}
+async function issueFormToken(id, env) {
+  const issuedAt = Date.now().toString();
+  const nonce = b64url(randomBytes(16));
+  const payload = "gate-form:" + id + ":" + issuedAt + ":" + nonce;
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", await sessionKey(env), encoder.encode(payload)));
+  return issuedAt + "." + nonce + "." + b64url(signature);
+}
+async function verifyFormToken(token, id, env) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3 || !/^\d{13}$/.test(parts[0]) || !/^[A-Za-z0-9_-]{22}$/.test(parts[1]) || !/^[A-Za-z0-9_-]{43}$/.test(parts[2])) return false;
+    const issuedAt = Number(parts[0]);
+    const now = Date.now();
+    if (issuedAt > now + 30000 || now - issuedAt > 10 * 60 * 1000) return false;
+    const payload = "gate-form:" + id + ":" + parts[0] + ":" + parts[1];
+    return await crypto.subtle.verify("HMAC", await sessionKey(env), bytesFromB64url(parts[2]), encoder.encode(payload));
+  } catch { return false; }
 }
 async function clientKey(request, env) {
   const key = await sessionKey(env);
@@ -116,14 +129,19 @@ function escapeHtml(value) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[char]);
 }
-function accessGateHtml(id, errorText = "") {
+async function accessGateHtml(id, env, errorText = "") {
+  const formToken = await issueFormToken(id, env);
   const nonce = b64url(randomBytes(16));
   const n = id.slice(1);
   const css = ':root{--ink:#302934;--muted:#756b78;--pink:#c982a5;--line:#eadde6;--paper:#fffdfd}*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 8% 5%,rgba(248,220,235,.58),transparent 34rem),radial-gradient(ellipse at 94% 88%,rgba(220,237,248,.48),transparent 36rem),var(--paper)}main{width:min(100% - 32px,650px);margin:auto;padding:clamp(34px,8vw,72px) 0}.mast{text-align:center;color:#a36f96;font-size:.7rem;letter-spacing:.22em;text-transform:uppercase}.card{margin-top:26px;padding:clamp(24px,6vw,48px);border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 8px 28px rgba(70,48,65,.045)}.eyebrow{color:#965c7d;font-size:.72rem;font-weight:650;letter-spacing:.17em;text-transform:uppercase}h1{margin:12px 0;font:600 clamp(1.9rem,6vw,2.7rem)/1.15 "Iowan Old Style","Palatino Linotype",Georgia,serif}p{color:#655867}.field{display:flex;gap:10px;margin-top:22px}.field input{min-width:0;flex:1;padding:13px 15px;border:1px solid #eadde6;border-radius:12px;font:inherit}.field button,.submit{border:1px solid #d9bfd0;border-radius:12px;background:#fff8fc;color:#6e4d64;padding:12px 15px;font:600 .9rem -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}.submit{width:100%;margin-top:13px;background:#f9eaf2}.error{color:#8d405d;font-size:.9rem}.subtle{color:var(--muted);font-size:.82rem}.footer{margin-top:19px;text-align:center;color:var(--muted);font-size:.75rem}a{color:#965c7d}';
   const script = "const f=document.getElementById('code');const b=document.getElementById('toggle');b.addEventListener('click',()=>{const show=f.type==='password';f.type=show?'text':'password';b.textContent=show?'Hide':'Show';b.setAttribute('aria-pressed',String(show));f.focus();});";
   const csp = "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
   const body = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive,nosnippet"><meta name="theme-color" content="#fffdfd"><title>Private Statement ' + n + ' — KILLKAIYO</title><style>' + css + '</style></head><body><main><div class="mast">KILLKAIYO · PRIVATE STATEMENT</div><section class="card"><div class="eyebrow">Statement ' + n + ' · Restricted</div><h1>Enter the access code</h1><p>These statement pages are shared by invitation. Enter the access code to continue.</p>' + (errorText ? '<p class="error" role="alert">' + escapeHtml(errorText) + '</p>' : '') + '<form method="post" action="/s' + n + '/"><label for="code">Access code</label><div class="field"><input id="code" name="code" type="password" autocomplete="current-password" required maxlength="256" aria-describedby="privacy"><button id="toggle" type="button" aria-pressed="false">Show</button></div><button class="submit" type="submit">Unlock all five statements</button></form><p id="privacy" class="subtle">Your code is checked securely and is not stored in plain text.</p></section><p class="footer"><a href="/">Return to k4iyo.com</a> · This page is not indexed by search engines.</p></main><script nonce="' + nonce + '">' + script + '</script></body></html>';
-  return new Response(body, { status: 200, headers: headers({
+  const securedBody = body.replace(
+    '<form method="post" action="/s' + n + '/">',
+    '<form method="post" action="/s' + n + '/"><input type="hidden" name="csrf" value="' + formToken + '">'
+  );
+  return new Response(securedBody, { status: 200, headers: headers({
     "Content-Type": "text/html; charset=utf-8",
     "Content-Security-Policy": csp
   }) });
@@ -186,22 +204,23 @@ export default {
     catch { return textResponse(503, "Secure access is not available."); }
     if (state.blocked) return redirect("/");
     if (request.method === "POST") {
-      if (!isSameOriginForm(request, url)) return textResponse(403, "This request could not be verified.");
       const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
       if (contentType !== "application/x-www-form-urlencoded") return textResponse(415, "Unsupported form encoding.");
       let body;
       try { body = await request.arrayBuffer(); }
       catch { return textResponse(400, "Enter the access code and try again."); }
       if (body.byteLength > 2048) return textResponse(413, "Request too large.");
-      let candidate;
-      try { candidate = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body)).get("code") || ""; }
+      let form;
+      try { form = new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(body)); }
       catch { return textResponse(400, "Enter the access code and try again."); }
-      if (!candidate || candidate.length > 256) return accessGateHtml(id, "Enter the access code and try again.");
+      if (!(await verifyFormToken(form.get("csrf"), id, env))) return textResponse(403, "This form expired. Reload the page and try again.");
+      const candidate = form.get("code") || "";
+      if (!candidate || candidate.length > 256) return await accessGateHtml(id, env, "Enter the access code and try again.");
       try {
         if (!(await verifyPasscode(candidate, env))) {
           const result = await limiter(request, env, "fail");
           if (result.blocked) return redirect("/");
-          return accessGateHtml(id, "That code did not match. " + result.attemptsLeft + " attempts remain before a 24-hour lockout.");
+          return await accessGateHtml(id, env, "That code did not match. " + result.attemptsLeft + " attempts remain before a 24-hour lockout.");
         }
         await limiter(request, env, "success");
         await logSuccess(env);
@@ -211,7 +230,7 @@ export default {
     if (request.method !== "GET" && request.method !== "HEAD") return textResponse(405, "Method not allowed.", { "Allow": "GET, HEAD, POST" });
     try {
       if (await hasSession(request, env)) return renderStatement(id, env);
-      const gate = accessGateHtml(id);
+      const gate = await accessGateHtml(id, env);
       return request.method === "HEAD" ? new Response(null, { status: 200, headers: gate.headers }) : gate;
     } catch { return textResponse(503, "Secure access is not available."); }
   }
