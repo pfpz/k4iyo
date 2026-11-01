@@ -208,7 +208,10 @@ export default {
     if (!env.GATE_LIMITER || !env.SESSION_SIGNING_KEY_B64 || !passcodeConfigIsValid(env)) return textResponse(503, "Secure access is not configured.");
     let state;
     try { state = await limiter(request, env, "check"); }
-    catch { return textResponse(503, "Secure access is not available."); }
+    catch (error) {
+      console.error("gate-access-failure", "limiter-check", error?.name || "Error");
+      return textResponse(503, "Secure access is not available.");
+    }
     if (state.blocked) return redirect("/");
     if (request.method === "POST") {
       const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
