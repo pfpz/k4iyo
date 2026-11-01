@@ -6,8 +6,8 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 
 - Private KV namespace `k4iyo-private-statements` is created and intended for encrypted statement records.
 - Private KV namespace `k4iyo-private-login-log` is created and intended for successful-entry timestamps.
-- Worker `k4iyo-private-statements` exists, but its public workers.dev URL is disabled.
-- Production bindings STATEMENTS and LOGIN_LOG point to the two private namespaces. The draft Worker code and `GateLimiter` Durable Object class have been deployed with KV and Durable Object bindings. Its workers.dev and preview URLs are disabled, and it has no custom-domain routes, so it is not publicly serving these pages.
+- Worker `k4iyo-private-statements` is deployed; its workers.dev and preview URLs are disabled.
+- Production bindings `STATEMENTS`, `LOGIN_LOG`, and `GATE_LIMITER` are connected. The four required Worker secrets are configured, and the `STATEMENTS` namespace contains the five encrypted records (`s1`–`s5`). No custom-domain routes are attached yet, so the pages are not publicly serving.
 - Existing Workers, the homepage, and the main GitHub branch have not been changed.
 
 ## Security design in the draft Worker
@@ -19,16 +19,12 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 - Statements are encrypted before upload to private KV using AES-256-CBC with encrypt-then-HMAC-SHA-256. The Worker verifies the MAC before decrypting after a valid cookie. Responses use private/no-store and no-index headers.
 - A shared code controls access but does not identify who entered it. Anyone who receives the code can unlock the pages.
 
-## Setup still required before the statement routes can be enabled
+## Remaining launch steps
 
-1. Keep the `GateLimiter` Durable Object migration and `STATEMENTS` and `LOGIN_LOG` KV bindings in sync with `wrangler.toml`.
-2. On your own computer, run `scripts/create-passcode-verifier.mjs` in an interactive terminal and enter the access code there; the script hides typing and prints only a random salt plus the PBKDF2 verifier. Enter those outputs yourself as Worker secrets `GATE_SALT_B64` and `GATE_HASH_B64`. Do not send the code or outputs in chat.
-3. Run `node scripts/create-random-worker-secrets.mjs` locally to generate random values for `SESSION_SIGNING_KEY_B64` (32 bytes) and `CONTENT_KEY_B64` (64 bytes). Add them as Worker secrets yourself; do not commit or share the output. Keep the content key available locally only while sealing the statements.
-4. Verify that the Worker fails closed before attaching custom-domain routes for only `k4iyo.com/s1*` through `k4iyo.com/s5*`. Keep workers.dev and preview URLs disabled.
-5. Review the private statement JSON outside GitHub, then use `scripts/seal-private-statements.mjs` in a local interactive terminal. It prompts for the content key with hidden input and writes only ciphertext to a mode-600 output file. Upload only that ciphertext to the private `STATEMENTS` KV namespace.
-6. Verify unauthenticated, correct-code, wrong-code, lockout, cookie, cache-header, and content-decryption behavior before sharing any hash clues. Keep routes unattached until secrets and encrypted statement records are in place.
+1. Attach only the five approved route patterns `k4iyo.com/s1*` through `k4iyo.com/s5*` after final action-time approval.
+2. Verify the gate, session cookie, 24-hour lockout, no-store headers, and successful content decryption. Keep workers.dev and preview URLs disabled.
 
-No statement text, access code, verifier, or encryption key has been uploaded to Cloudflare. The homepage remains public.
+Statement plaintext, access code, verifier, and encryption keys are not stored in GitHub. The homepage remains public.
 
 ## Seal private statement text
 
