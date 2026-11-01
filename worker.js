@@ -93,6 +93,12 @@ async function verifyPasscode(candidate, env) {
   for (let i = 0; i < actual.length; i++) difference |= actual[i] ^ expected[i];
   return difference === 0;
 }
+function passcodeConfigIsValid(env) {
+  try {
+    return bytesFromB64(String(env.GATE_SALT_B64 || "")).length >= 16 &&
+      bytesFromB64(String(env.GATE_HASH_B64 || "")).length === 32;
+  } catch { return false; }
+}
 async function issueSession(env) {
   const key = await sessionKey(env);
   const token = b64url(randomBytes(32));
@@ -198,7 +204,7 @@ export default {
     const match = url.pathname.match(/^\/s([1-5])(?:\/index\.html)?\/?$/);
     if (!match) return textResponse(404, "Not found.");
     const id = "s" + match[1];
-    if (!env.GATE_LIMITER || !env.SESSION_SIGNING_KEY_B64) return textResponse(503, "Secure access is not configured.");
+    if (!env.GATE_LIMITER || !env.SESSION_SIGNING_KEY_B64 || !passcodeConfigIsValid(env)) return textResponse(503, "Secure access is not configured.");
     let state;
     try { state = await limiter(request, env, "check"); }
     catch { return textResponse(503, "Secure access is not available."); }
