@@ -7,7 +7,7 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 - Private KV namespace `k4iyo-private-statements` is created and intended for encrypted statement records.
 - Private KV namespace `k4iyo-private-login-log` is created and intended for successful-entry timestamps.
 - Worker `k4iyo-private-statements` is deployed; its workers.dev and preview URLs are disabled.
-- Production bindings `STATEMENTS`, `LOGIN_LOG`, and `GATE_LIMITER` are connected. The four required Worker secrets are configured, and the `STATEMENTS` namespace contains the five encrypted records (`s1`–`s5`). No custom-domain routes are attached yet, so the pages are not publicly serving.
+- Production bindings `STATEMENTS`, `LOGIN_LOG`, and `GATE_LIMITER` are connected. The four required Worker secrets are configured, and the `STATEMENTS` namespace contains the five encrypted records (`s1`–`s5`). The five approved custom-domain routes are now attached.
 - Existing Workers, the homepage, and the main GitHub branch have not been changed.
 
 ## Security design in the draft Worker
@@ -19,10 +19,13 @@ This branch contains generic page shells, a Cloudflare Worker, and local helper 
 - Statements are encrypted before upload to private KV using AES-256-CBC with encrypt-then-HMAC-SHA-256. The Worker verifies the MAC before decrypting after a valid cookie. Responses use private/no-store and no-index headers.
 - A shared code controls access but does not identify who entered it. Anyone who receives the code can unlock the pages.
 
-## Remaining launch steps
+## Deployment and verification status
 
-1. Attach only the five approved route patterns `k4iyo.com/s1*` through `k4iyo.com/s5*` after final action-time approval.
-2. Verify the gate, session cookie, 24-hour lockout, no-store headers, and successful content decryption. Keep workers.dev and preview URLs disabled.
+- The prior “Secure access is not available” failure was traced to the Worker having no custom-domain routes. Cloudflare showed zero routes, so the gate requests were not reaching the Worker that owns the verifier, limiter, and encrypted-record bindings.
+- Attached `k4iyo.com/s1*` through `k4iyo.com/s5*`; Cloudflare now reports five routes on this Worker. The homepage and unrelated routes were not changed.
+- All five public GET routes return the gate form with a signed form token. A blank-code POST returns the form without incrementing the failed-attempt counter. Local integration checks with disposable test keys verified the successful verifier, limiter, audit-log, and cookie path.
+- A real-code unlock and live statement decryption still require the site owner to enter and submit the access code in the browser. No code was read or entered by the maintainer.
+- Keep workers.dev and preview URLs disabled.
 
 Statement plaintext, access code, verifier, and encryption keys are not stored in GitHub. The homepage remains public.
 
@@ -35,3 +38,4 @@ Create a local JSON object containing exactly `s1`, `s2`, `s3`, `s4`, and `s5`, 
 Upload only the resulting encrypted values to the private `STATEMENTS` KV namespace. Never upload the source JSON or key to GitHub.
 
 The first user-supplied paragraph was lightly reframed as a first-person belief and safety concern in the earlier draft plan. Other text should be reviewed by the user before sealing. This does not verify the allegations or guarantee protection from legal claims.
+
