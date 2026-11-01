@@ -1,0 +1,5 @@
+.env
+.env.*
+*.sealed.json
+statements.private.json
+private-secrets.txt

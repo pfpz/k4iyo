@@ -1,10 +1,10 @@
 name = "k4iyo-private-statements"
 main = "worker.js"
-compatibility_date = "2025-10-31"
+compatibility_date = "2026-11-01"
 workers_dev = false
 preview_urls = false
 
-# Route only these paths; the rest of the live site is untouched.
+# Route only the five statement directories. The public homepage is unchanged.
 routes = [
   { pattern = "k4iyo.com/s1*", zone_name = "k4iyo.com" },
   { pattern = "k4iyo.com/s2*", zone_name = "k4iyo.com" },
@@ -15,10 +15,19 @@ routes = [
 
 [[kv_namespaces]]
 binding = "STATEMENTS"
-id = "SET_KV_NAMESPACE_ID_BEFORE_DEPLOY"
+id = "SET_PRIVATE_STATEMENTS_KV_ID"
 
-[vars]
-ACCESS_TEAM_DOMAIN = "SET_CLOUDFLARE_ACCESS_TEAM_DOMAIN"
-ACCESS_AUD = "SET_ACCESS_APPLICATION_AUD_TAG"
+[[kv_namespaces]]
+binding = "LOGIN_LOG"
+id = "SET_PRIVATE_LOGIN_LOG_KV_ID"
 
-# Set STATEMENT_KEY_B64 as a Worker secret. Never place it in this file or GitHub.
+[[durable_objects.bindings]]
+name = "GATE_LIMITER"
+class_name = "GateLimiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GateLimiter"]
+
+# Configure these as Worker secrets, not plaintext variables:
+# GATE_SALT_B64, GATE_HASH_B64, SESSION_SIGNING_KEY_B64, CONTENT_KEY_B64
