@@ -15,11 +15,11 @@ routes = [
 
 [[kv_namespaces]]
 binding = "STATEMENTS"
-id = "SET_PRIVATE_STATEMENTS_KV_ID"
+id = "8d76b06ec65e4e879e183d2e423ebef7"
 
 [[kv_namespaces]]
 binding = "LOGIN_LOG"
-id = "SET_PRIVATE_LOGIN_LOG_KV_ID"
+id = "06a93092156b4498a88894e71c8dd4af"
 
 [[durable_objects.bindings]]
 name = "GATE_LIMITER"
